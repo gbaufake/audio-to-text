@@ -1,87 +1,122 @@
-# Basic script for using the OpenAI Whisper model to transcribe a video file. You can uncomment whichever model you want to use.
-# Author: ThioJoe ( https://github.com/ThioJoe )
-
-# Required third party packages: whisper
-# See instructions for setup here: https://github.com/openai/whisper#setup
-#   - You can use the below command to pull the repo and install dependencies, then just put this script in the repo directory:
-#     pip install git+https://github.com/openai/whisper.git
-
-import whisper
-import io
-import time
+import logging
+from subprocess import call
+import gradio as gr
 import os
-import json
-import pathlib
+# from transformers.pipelines.audio_utils import ffmpeg_read
+import whisper
 
-# Choose model to use by uncommenting
-# modelName = "tiny.en"
-modelName = "base.en"
-# modelName = "small.en"
-# modelName = "medium.en"
-# modelName = "large-v2"
 
-# Other Variables
-# (bool) Whether to export the segment data to a json file. Will include word level timestamps if word_timestamps is True.
-exportTimestampData = True
-outputFolder = "Output"
+logger = logging.getLogger("whisper-jax-app")
+logger.setLevel(logging.INFO)
+ch = logging.StreamHandler()
+ch.setLevel(logging.INFO)
+formatter = logging.Formatter(
+    "%(asctime)s;%(levelname)s;%(message)s", "%Y-%m-%d %H:%M:%S")
+ch.setFormatter(formatter)
+logger.addHandler(ch)
 
-#  ----- Select variables for transcribe method  -----
-# audio: path to audio file
-verbose = True  # (bool): Whether to display the text being decoded to the console. If True, displays all the details, If False, displays minimal details. If None, does not display anything
-language = "english"  # Language of audio file
-# (bool): Extract word-level timestamps using the cross-attention pattern and dynamic time warping, and include the timestamps for each word in each segment.
-word_timestamps = False
-# initial_prompt="" # (optional str): Optional text to provide as a prompt for the first window. This can be used to provide, or "prompt-engineer" a context for transcription, e.g. custom vocabularies or proper nouns to make it more likely to predict those word correctly.
 
-#  -------------------------------------------------------------------------
-print(f"Using Model: {modelName}")
-filePath = input("Path to File Being Transcribed: ")
-filePath = filePath.strip("\"")
-if not os.path.exists(filePath):
-    print("Problem Getting File...")
-    input("Press Enter to Exit...")
-    exit()
+BATCH_SIZE = 16
+CHUNK_LENGTH_S = 30
+NUM_PROC = 8
+FILE_LIMIT_MB = 1000
+YT_ATTEMPT_LIMIT = 3
 
-# If output folder does not exist, create it
-if not os.path.exists(outputFolder):
-    os.makedirs(outputFolder)
-    print("Created Output Folder.\n")
 
-# Get filename stem using pathlib (filename without extension)
-fileNameStem = pathlib.Path(filePath).stem
+def run_cmd(command):
+    try:
+        print(command)
+        call(command)
+    except KeyboardInterrupt:
+        print("Process interrupted")
+        sys.exit(1)
 
-resultFileName = f"{fileNameStem}.txt"
-jsonFileName = f"{fileNameStem}.json"
 
-model = whisper.load_model(modelName)
-start = time.time()
+def inference(text):
+    cmd = ['tts', '--text', text]
+    run_cmd(cmd)
+    return 'tts_output.wav'
 
+
+model = whisper.load_model("base")
+
+inputs = gr.components.Audio(type="filepath", label="Add audio file")
+outputs = gr.components.Textbox()
+title = "Audio To text⚡️"
+description = "An example of using TTS to generate speech from text."
+article = ""
+examples = [
+    [""]
+]
+
+
+def transcribe(inputs):
+    print('Inputs: ', inputs)
+    # print('Text: ', text)
+    # progress(0, desc="Loading audio file...")
+    if inputs is None:
+        logger.warning("No audio file")
+        return "No audio file submitted! Please upload an audio file before submitting your request."
+    file_size_mb = os.stat(inputs).st_size / (1024 * 1024)
+    if file_size_mb > FILE_LIMIT_MB:
+        logger.warning("Max file size exceeded")
+        return f"File size exceeds file size limit. Got file of size {file_size_mb:.2f}MB for a limit of {FILE_LIMIT_MB}MB."
+
+    # with open(inputs, "rb") as f:
+    #     inputs = f.read()
+
+    # load audio and pad/trim it to fit 30 seconds
+    result = model.transcribe(audio=inputs, language='hindi',
+                              word_timestamps=False, verbose=True)
 #  ---------------------------------------------------
-result = model.transcribe(audio=filePath, language=language,
-                          word_timestamps=word_timestamps, verbose=verbose)
-#  ---------------------------------------------------
 
-end = time.time()
-elapsed = float(end - start)
+    print(result["text"])
+    return result["text"]
 
-# Save transcription text to file
-print("\nWriting transcription to file...")
-with open(os.path.join(outputFolder, resultFileName), "w", encoding="utf-8") as file:
-    file.write(result["text"])
-print("Finished writing transcription file.")
 
-# Sav
-# e the segments data to json file
-# if word_timestamps == True:
-if exportTimestampData == True:
-    print("\nWriting segment data to file...")
-    with open(os.path.join(outputFolder, jsonFileName), "w", encoding="utf-8") as file:
-        segmentsData = result["segments"]
-        json.dump(segmentsData, file, indent=4)
-    print("Finished writing segment data file.")
+audio_chunked = gr.Interface(
+    fn=transcribe,
+    inputs=inputs,
+    outputs=outputs,
+    allow_flagging="never",
+    title=title,
+    description=description,
+    article=article,
+)
 
-elapsedMinutes = str(round(elapsed/60, 2))
-print(f"\nElapsed Time With {modelName} Model: {elapsedMinutes} Minutes")
+microphone_chunked = gr.Interface(
+    fn=transcribe,
+    inputs=[
+        gr.inputs.Audio(source="microphone",
+                        optional=True, type="filepath"),
+    ],
+    outputs=[
+        gr.outputs.Textbox(label="Transcription").style(
+            show_copy_button=True),
+    ],
+    allow_flagging="never",
+    title=title,
+    description=description,
+    article=article,
+)
 
-input("Press Enter to exit...")
-exit()
+demo = gr.Blocks()
+with demo:
+    gr.TabbedInterface([audio_chunked, microphone_chunked], [
+                       "Audio File", "Microphone"])
+demo.queue(concurrency_count=1, max_size=5)
+demo.launch(show_api=False)
+
+
+# gr.Interface(
+#     inference,
+#     inputs,
+#     outputs,
+#     verbose=True,
+#     title=title,
+#     description=description,
+#     article=article,
+#     examples=examples,
+#     enable_queue=True,
+
+# ).launch(share=True, debug=True)
