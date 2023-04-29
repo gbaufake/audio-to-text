@@ -83,6 +83,8 @@ def transcribe(inputs, microphone):
     #  --------------------------------------------------- Clear the file if exists ---------------------------------------------------
     if os.path.exists(srtFilename):
         os.remove(srtFilename)
+    with open(srtFilename, 'w', encoding='utf-8') as srtFile:
+        srtFile.write('')
 
     # --------------------------------------------------- Write the file ---------------------------------------------------
     segments = result['segments']
