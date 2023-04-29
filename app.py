@@ -1,5 +1,6 @@
 import os
 os.system("pip install git+https://github.com/openai/whisper.git")
+from pytube import YouTube
 import gradio as gr
 from subprocess import call
 import whisper
@@ -43,7 +44,7 @@ model = whisper.load_model("base")
 
 inputs = gr.components.Audio(type="filepath", label="Add audio file")
 outputs = gr.components.Textbox()
-title = "Audio To text⚡️"
+title = "Transcribe multi-lingual audio clips"
 description = "An example of using TTS to generate speech from text."
 article = ""
 examples = [
@@ -67,12 +68,28 @@ def transcribe(inputs):
     #     inputs = f.read()
 
     # load audio and pad/trim it to fit 30 seconds
-    result = model.transcribe(audio=inputs, language='hindi',
+    result = model.transcribe(audio=inputs, language='english',
                               word_timestamps=False, verbose=True)
 #  ---------------------------------------------------
 
     print(result["text"])
     return result["text"]
+
+
+# Transcribe youtube video
+# define function for transcription
+def youtube_transcript(url):
+    try:
+        if url:
+            yt = YouTube(url, use_oauth=True)
+            source = yt.streams.filter(progressive=True, file_extension='mp4').order_by(
+                'resolution').desc().first().download('output/youtube')
+
+            transcript = model.transcribe(source)
+            return transcript["text"]
+    except Exception as e:
+        print('Error: ', e)
+        return 'Error: ' + str(e)
 
 
 audio_chunked = gr.Interface(
@@ -100,11 +117,33 @@ microphone_chunked = gr.Interface(
     description=description,
     article=article,
 )
+youtube_chunked = gr.Interface(
+    fn=youtube_transcript,
+    inputs=[
+        gr.inputs.Textbox(label="Youtube URL", type="text"),
+    ],
+    outputs=[
+        gr.outputs.Textbox(label="Transcription").style(
+            show_copy_button=True),
+    ],
+    allow_flagging="never",
+    title=title,
+
+    description=description,
+    article=article,
+    examples=[
+        [  "https://www.youtube.com/watch?v=nlMuHtV82q8&ab_channel=NothingforSale24",],
+        ["https://www.youtube.com/watch?v=JzPfMbG1vrE&ab_channel=ExplainerVideosByLauren",],
+        ["https://www.youtube.com/watch?v=S68vvV0kod8&ab_channel=Pearl-CohnTelevision"]
+
+    ],
+
+)
 
 demo = gr.Blocks()
 with demo:
-    gr.TabbedInterface([audio_chunked, microphone_chunked], [
-                       "Audio File", "Microphone"])
+    gr.TabbedInterface([youtube_chunked, audio_chunked, microphone_chunked], [
+        "Youtube", "Audio File", "Microphone"])
 demo.queue(concurrency_count=1, max_size=5)
 demo.launch(show_api=False)
 
