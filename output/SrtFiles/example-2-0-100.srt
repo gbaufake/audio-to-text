@@ -1,0 +1,12 @@
+1
+00:00:00,000 --> 00:00:05,000
+This scene is a beautiful landscape of mountains, trees, and a flowing river.
+
+2
+00:00:05,000 --> 00:00:10,000
+The sun is shining down, casting a warm glow over the entire scene.
+
+3
+00:00:10,000 --> 00:00:40,000
+The man in the image is sitting on a large rock, overlooking the river.
+
