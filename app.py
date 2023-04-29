@@ -1,10 +1,10 @@
-import logging
-from subprocess import call
 import gradio as gr
+from subprocess import call
+import whisper
 import os
+import logging
 os.system("pip install git+https://github.com/openai/whisper.git")
 # from transformers.pipelines.audio_utils import ffmpeg_read
-import whisper
 
 
 logger = logging.getLogger("whisper-jax-app")
