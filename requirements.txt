@@ -1,2 +1,2 @@
-whisper;python_version=="3.9"
-gradio===3.27.0;python_version=="3.9"
+whisper;python_version=="3.10"
+gradio===3.27.0;python_version=="3.10"
