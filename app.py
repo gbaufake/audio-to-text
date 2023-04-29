@@ -80,10 +80,9 @@ def transcribe(inputs, microphone):
     srtFilename = os.path.join("output/SrtFiles", inputs.split(
         '/')[-1].split('.')[0]+'.srt')
 
-    #  --------------------------------------------------- Clear the file ---------------------------------------------------
-    with open(srtFilename, 'w', encoding='utf-8') as srtFile:
-        srtFile.seek(0)
-        srtFile.truncate()
+    #  --------------------------------------------------- Clear the file if exists ---------------------------------------------------
+    if os.path.exists(srtFilename):
+        os.remove(srtFilename)
 
     # --------------------------------------------------- Write the file ---------------------------------------------------
     segments = result['segments']
