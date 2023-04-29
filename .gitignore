@@ -1,1 +1,3 @@
-output/
+*.srt
+*.mp4
+*.raw

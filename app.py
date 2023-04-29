@@ -1,13 +1,13 @@
 import os
-import logging
 os.system("pip install git+https://github.com/openai/whisper.git")
-import gradio as gr
-from subprocess import call
-import whisper
-from datetime import timedelta
-from pytube import YouTube
-import pandas as pd
 import pysrt
+import pandas as pd
+from pytube import YouTube
+from datetime import timedelta
+import whisper
+from subprocess import call
+import gradio as gr
+import logging
 # from transformers.pipelines.audio_utils import ffmpeg_read
 
 
@@ -21,11 +21,7 @@ ch.setFormatter(formatter)
 logger.addHandler(ch)
 
 
-BATCH_SIZE = 16
-CHUNK_LENGTH_S = 30
-NUM_PROC = 8
 FILE_LIMIT_MB = 1000
-YT_ATTEMPT_LIMIT = 3
 
 
 def run_cmd(command):
@@ -44,7 +40,6 @@ def inference(text):
 
 
 baseModel = whisper.load_model("base")
-smallModel = whisper.load_model("small")
 
 
 df_init = pd.DataFrame(columns=['start', 'end', 'text'])
@@ -52,35 +47,45 @@ transcription_df = gr.DataFrame(value=df_init, label="Transcription dataframe", 
     0, "dynamic"), max_rows=30, wrap=True, overflow_row_behaviour='paginate')
 
 
-inputs = gr.components.Audio(type="filepath", label="Add audio file")
+inputs = [gr.components.Audio(type="filepath", label="Add audio file"), gr.inputs.Audio(source="microphone",
+                                                                                        optional=True, type="filepath"),]
 outputs = [gr.components.Textbox(), transcription_df]
 title = "Transcribe multi-lingual audio clips"
-description = "An example of using TTS to generate speech from text."
+description = "An example of using OpenAi whisper to generate transcriptions for audio clips."
 article = ""
-examples = [
-    [""]
+audio_examples = [
+    ["input/example-1.wav"],
+    ["input/example-2.wav"],
 ]
 
 
-def transcribe(inputs):
-    print('Inputs: ', inputs)
-    # print('Text: ', text)
-    # progress(0, desc="Loading audio file...")
+def transcribe(inputs, microphone):
+    if (microphone is not None):
+        inputs = microphone
+
     if inputs is None:
         logger.warning("No audio file")
-        return "No audio file submitted! Please upload an audio file before submitting your request."
+        return [f"File size exceeds file size limit. Got file of size {file_size_mb:.2f}MB for a limit of {FILE_LIMIT_MB}MB.", df_init]
     file_size_mb = os.stat(inputs).st_size / (1024 * 1024)
+
+    # --------------------------------------------------- Check the file size ---------------------------------------------------
     if file_size_mb > FILE_LIMIT_MB:
         logger.warning("Max file size exceeded")
-        return f"File size exceeds file size limit. Got file of size {file_size_mb:.2f}MB for a limit of {FILE_LIMIT_MB}MB."
+        df = pd.DataFrame(columns=['start', 'end', 'text'])
+        return [f"File size exceeds file size limit. Got file of size {file_size_mb:.2f}MB for a limit of {FILE_LIMIT_MB}MB.", df_init]
 
-    # with open(inputs, "rb") as f:
-    #     inputs = f.read()
+    # --------------------------------------------------- Transcribe the audio ---------------------------------------------------
+    result = baseModel.transcribe(audio=inputs, language='english',
+                                  verbose=False)
+    srtFilename = os.path.join("output/SrtFiles", inputs.split(
+        '/')[-1].split('.')[0]+'.srt')
 
-    # load audio and pad/trim it to fit 30 seconds
-    result = smallModel.transcribe(audio=inputs, language='english',
-                                   verbose=False)
-#  ---------------------------------------------------
+    #  --------------------------------------------------- Clear the file ---------------------------------------------------
+    with open(srtFilename, 'w', encoding='utf-8') as srtFile:
+        srtFile.seek(0)
+        srtFile.truncate()
+
+    # --------------------------------------------------- Write the file ---------------------------------------------------
     segments = result['segments']
     for segment in segments:
         startTime = str(0)+str(timedelta(seconds=int(segment['start'])))+',000'
@@ -89,17 +94,11 @@ def transcribe(inputs):
         segmentId = segment['id']+1
         segment = f"{segmentId}\n{startTime} --> {endTime}\n{text[1:] if text[0] is ' ' else text}\n\n"
 
-        srtFilename = os.path.join("output/SrtFiles", inputs.split(
-            '/')[-1].split('.')[0]+'.srt')
         with open(srtFilename, 'a', encoding='utf-8') as srtFile:
             srtFile.write(segment)
 
-        rawFilename = os.path.join("output/SrtFiles", inputs.split(
-            '/')[-1].split('.')[0]+'.srt')
-        with open(rawFilename, 'a', encoding='utf-8') as srtFile:
-            srtFile.write(segment)
+    # ------------------------------------------- Read the file and Prepare to display ---------------------------------------
     try:
-
         srt_path = srtFilename
         df = pd.DataFrame(columns=['start', 'end', 'text'])
         subs = pysrt.open(srt_path)
@@ -129,7 +128,7 @@ def transcribe(inputs):
         df = pd.DataFrame(objects, columns=['start', 'end', 'text'])
     except Exception as e:
         print('Error: ', e)
-        df = pd.DataFrame(columns=['start', 'end', 'text'])
+        df = df_init
 
     return [result["text"], df]
 
@@ -205,23 +204,24 @@ audio_chunked = gr.Interface(
     title=title,
     description=description,
     article=article,
+    examples=audio_examples,
 )
 
-microphone_chunked = gr.Interface(
-    fn=transcribe,
-    inputs=[
-        gr.inputs.Audio(source="microphone",
-                        optional=True, type="filepath"),
-    ],
-    outputs=[
-        gr.outputs.Textbox(label="Transcription").style(
-            show_copy_button=True),
-    ],
-    allow_flagging="never",
-    title=title,
-    description=description,
-    article=article,
-)
+# microphone_chunked = gr.Interface(
+#     fn=transcribe,
+#     inputs=[
+#         gr.inputs.Audio(source="microphone",
+#                         optional=True, type="filepath"),
+#     ],
+#     outputs=[
+#         gr.outputs.Textbox(label="Transcription").style(
+#             show_copy_button=True),
+#     ],
+#     allow_flagging="never",
+#     title=title,
+#     description=description,
+#     article=article,
+# )
 youtube_chunked = gr.Interface(
     fn=youtube_transcript,
     inputs=[
@@ -248,21 +248,7 @@ youtube_chunked = gr.Interface(
 
 demo = gr.Blocks()
 with demo:
-    gr.TabbedInterface([audio_chunked, youtube_chunked, microphone_chunked], [
-        "Audio File", "Youtube", "Microphone"])
+    gr.TabbedInterface([audio_chunked, youtube_chunked], [
+        "Audio File", "Youtube"])
 demo.queue(concurrency_count=1, max_size=5)
 demo.launch(show_api=False)
-
-
-# gr.Interface(
-#     inference,
-#     inputs,
-#     outputs,
-#     verbose=True,
-#     title=title,
-#     description=description,
-#     article=article,
-#     examples=examples,
-#     enable_queue=True,
-
-# ).launch(share=True, debug=True)
