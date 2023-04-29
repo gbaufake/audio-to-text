@@ -1,3 +1,4 @@
 whisper
 gradio===3.27.0
 pytube
+pysrt
